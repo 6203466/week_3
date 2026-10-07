@@ -70,13 +70,45 @@ export const loginUser = async (req: Request, res: Response) => {
       expiresIn: "1h",
     });
 
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 3600000, // 1 hour
+    });
+
     return res.status(200).json({
       message: "Login successful",
-      token,
       user: { id: user.id, name: user.name, email: user.email },
     });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const logoutUser = async (req: Request, res: Response) => {
+  res.clearCookie("token");
+  return res.status(200).json({ message: "Logout successful" });
+};
+
+export const me = async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies?.token;
+    if (!token) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+
+    if (!user) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    return res.status(200).json({
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid token" });
   }
 };

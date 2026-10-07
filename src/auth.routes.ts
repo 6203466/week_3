@@ -1,13 +1,11 @@
 import { Router } from "express";
-import { registerUser, loginUser } from "./auth.controller";
+import { registerUser, loginUser, logoutUser, me } from "./auth.controller";
 
 const router = Router();
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-
-// middleware for auth will go here
-
-
+router.post("/logout", logoutUser);
+router.get("/me", me);
 
 export default router;
