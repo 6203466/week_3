@@ -14,9 +14,22 @@ export default function App() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const res = await fetch(API + '/me', {
+        let res = await fetch(API + '/me', {
           credentials: 'include'
         });
+        
+        if (res.status === 401) {
+          const refreshRes = await fetch(API + '/refresh', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (refreshRes.ok) {
+            res = await fetch(API + '/me', {
+              credentials: 'include'
+            });
+          }
+        }
+
         if (res.ok) {
           const data = await res.json();
           setUser(data.user.name);

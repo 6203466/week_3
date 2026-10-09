@@ -5,6 +5,7 @@ import { z } from "zod";
 import prisma from "./prisma";  
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (JWT_SECRET + "_refresh");
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -66,14 +67,24 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
-      expiresIn: "1h",
+    const accessToken = jwt.sign({ userId: user.id, type: "access" }, JWT_SECRET, {
+      expiresIn: "15m",
     });
 
-    res.cookie("token", token, {
+    const refreshToken = jwt.sign({ userId: user.id, type: "refresh" }, JWT_REFRESH_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.cookie("accessToken", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hour
+      maxAge: 15 * 60 * 1000, // 15 minutes
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     return res.status(200).json({
@@ -87,18 +98,23 @@ export const loginUser = async (req: Request, res: Response) => {
 };
 
 export const logoutUser = async (req: Request, res: Response) => {
-  res.clearCookie("token");
+  res.clearCookie("accessToken");
+  res.clearCookie("refreshToken");
   return res.status(200).json({ message: "Logout successful" });
 };
 
 export const me = async (req: Request, res: Response) => {
   try {
-    const token = req.cookies?.token;
+    const token = req.cookies?.accessToken;
     if (!token) {
       return res.status(401).json({ message: "Not authenticated" });
     }
 
     const decoded: any = jwt.verify(token, JWT_SECRET);
+    if (decoded.type !== "access") {
+      return res.status(401).json({ message: "Invalid token type" });
+    }
+    
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
 
     if (!user) {
@@ -110,5 +126,39 @@ export const me = async (req: Request, res: Response) => {
     });
   } catch (error) {
     return res.status(401).json({ message: "Invalid token" });
+  }
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const refreshToken = req.cookies?.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ message: "No refresh token provided" });
+    }
+
+    const decoded: any = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    if (decoded.type !== "refresh") {
+      return res.status(401).json({ message: "Invalid token type" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    const newAccessToken = jwt.sign({ userId: user.id, type: "access" }, JWT_SECRET, {
+      expiresIn: "15m",
+    });
+
+    res.cookie("accessToken", newAccessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 15 * 60 * 1000, // 15 minutes
+    });
+
+    return res.status(200).json({ message: "Token refreshed successfully" });
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid refresh token" });
   }
 };
